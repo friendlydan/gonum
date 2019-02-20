@@ -37,37 +37,39 @@ import (
 // If lwork is -1, instead of performing Dormqr, the optimal workspace size will
 // be stored into work[0].
 func (impl Implementation) Dormqr(side blas.Side, trans blas.Transpose, m, n, k int, a []float64, lda int, tau, c []float64, ldc int, work []float64, lwork int) {
-	var nq, nw int
-	switch side {
-	default:
-		panic(badSide)
-	case blas.Left:
+	left := side == blas.Left
+	nq := n
+	nw := m
+	if left {
 		nq = m
 		nw = n
-	case blas.Right:
-		nq = n
-		nw = m
 	}
 	switch {
+	case !left && side != blas.Right:
+		panic(badSide)
 	case trans != blas.NoTrans && trans != blas.Trans:
 		panic(badTrans)
-	case m < 0 || n < 0:
-		panic(negDimension)
-	case k < 0 || nq < k:
-		panic("lapack: invalid value of k")
-	case len(work) < lwork:
-		panic(shortWork)
+	case m < 0:
+		panic(mLT0)
+	case n < 0:
+		panic(nLT0)
+	case k < 0:
+		panic(kLT0)
+	case left && k > m:
+		panic(kGTM)
+	case !left && k > n:
+		panic(kGTN)
+	case lda < max(1, k):
+		panic(badLdA)
+	case ldc < max(1, n):
+		panic(badLdC)
 	case lwork < max(1, nw) && lwork != -1:
 		panic(badWork)
-	}
-	if lwork != -1 {
-		checkMatrix(nq, k, a, lda)
-		checkMatrix(m, n, c, ldc)
-		if len(tau) != k {
-			panic(badTau)
-		}
+	case len(work) < max(1, lwork):
+		panic(shortWork)
 	}
 
+	// Quick return if possible.
 	if m == 0 || n == 0 || k == 0 {
 		work[0] = 1
 		return
@@ -84,6 +86,15 @@ func (impl Implementation) Dormqr(side blas.Side, trans blas.Transpose, m, n, k 
 	if lwork == -1 {
 		work[0] = float64(lworkopt)
 		return
+	}
+
+	switch {
+	case len(a) < (nq-1)*lda+k:
+		panic(shortA)
+	case len(tau) != k:
+		panic(badTau)
+	case len(c) < (m-1)*ldc+n:
+		panic(shortC)
 	}
 
 	nbmin := 2
@@ -103,7 +114,6 @@ func (impl Implementation) Dormqr(side blas.Side, trans blas.Transpose, m, n, k 
 
 	var (
 		ldwork = nb
-		left   = side == blas.Left
 		notran = trans == blas.NoTrans
 	)
 	switch {

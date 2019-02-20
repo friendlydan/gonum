@@ -29,12 +29,20 @@ import (
 // Dorgqr is an internal routine. It is exported for testing purposes.
 func (impl Implementation) Dorgqr(m, n, k int, a []float64, lda int, tau, work []float64, lwork int) {
 	switch {
+	case m < 0:
+		panic(mLT0)
+	case n < 0:
+		panic(nLT0)
+	case n > m:
+		panic(nGTM)
 	case k < 0:
 		panic(kLT0)
-	case n < k:
+	case k > n:
 		panic(kGTN)
-	case m < n:
-		panic(mLTN)
+	case lda < max(1, n) && lwork != -1:
+		// Dgesvd calls Dorgqr with a placeholder value for lda (and a)
+		// when doing a workspace query, which causes a panic here.
+		panic(badLdA)
 	case lwork < max(1, n) && lwork != -1:
 		panic(badWork)
 	case len(work) < max(1, lwork):
@@ -54,10 +62,8 @@ func (impl Implementation) Dorgqr(m, n, k int, a []float64, lda int, tau, work [
 	}
 
 	switch {
-	case lda < max(1, n):
-		panic(badLdA)
 	case len(a) < (m-1)*lda+n:
-		panic("lapack: insuffcient length of a")
+		panic(shortA)
 	case len(tau) < k:
 		panic(badTau)
 	}
